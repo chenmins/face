@@ -1,123 +1,9 @@
+
+
 import os
 import cv2
 import numpy as np
 from mtcnn.mtcnn import MTCNN
-from sklearn.cluster import KMeans
-
-
-def replace_dominant_color_with_white(img, n_clusters=3, percentage_threshold=0.5):
-    # 调整图像大小以加快处理速度
-    small_img = cv2.resize(img, (0, 0), fx=0.1, fy=0.1, interpolation=cv2.INTER_AREA)
-
-    # 将图像从 BGR 转为 RGB
-    small_img_rgb = cv2.cvtColor(small_img, cv2.COLOR_BGR2RGB)
-
-    # 将图像数据重塑为二维数组
-    pixel_data = small_img_rgb.reshape(-1, 3)
-
-    # 使用 K-means 算法对像素数据进行聚类
-    kmeans = KMeans(n_clusters=n_clusters)
-    kmeans.fit(pixel_data)
-    cluster_centers = kmeans.cluster_centers_
-
-    # 获取每个聚类的像素计数
-    unique, counts = np.unique(kmeans.labels_, return_counts=True)
-
-    # 计算每个聚类的像素占比
-    percentages = counts / sum(counts)
-
-    # 创建一个空白遮罩
-    mask = np.zeros(img.shape[:2], dtype=np.uint8)
-
-    # 遍历每个聚类，检查其占比是否大于阈值
-    for i, percentage in enumerate(percentages):
-        if percentage > percentage_threshold:
-            dominant_color = cluster_centers[i].astype(int)
-
-            # 为大于阈值的颜色创建遮罩
-            color_mask = cv2.inRange(img, dominant_color - 50, dominant_color + 50)
-            mask = cv2.bitwise_or(mask, color_mask)
-
-    mask_inv = cv2.bitwise_not(mask)
-
-    # 创建一个白色背景
-    white_img = np.full(img.shape, 255, dtype=np.uint8)
-
-    # 使用遮罩将大于阈值的颜色替换为白色
-    img_foreground = cv2.bitwise_and(img, img, mask=mask_inv)
-    img_background = cv2.bitwise_and(white_img, white_img, mask=mask)
-
-    result = cv2.add(img_foreground, img_background)
-    return result
-
-
-
-
-def replace_dominant_color_with_white66(img, n_clusters=5):
-    small_img = cv2.resize(img, (0, 0), fx=0.1, fy=0.1, interpolation=cv2.INTER_AREA)
-    small_img_rgb = cv2.cvtColor(small_img, cv2.COLOR_BGR2RGB)
-    pixel_data = small_img_rgb.reshape(-1, 3)
-    kmeans = KMeans(n_clusters=n_clusters)
-    kmeans.fit(pixel_data)
-    cluster_centers = kmeans.cluster_centers_
-    unique, counts = np.unique(kmeans.labels_, return_counts=True)
-    dominant_color = cluster_centers[np.argmax(counts)].astype(int)
-    mask = cv2.inRange(img, dominant_color - 30, dominant_color + 30)
-    mask_inv = cv2.bitwise_not(mask)
-    white_img = np.full(img.shape, 255, dtype=np.uint8)
-    img_foreground = cv2.bitwise_and(img, img, mask=mask_inv)
-    img_background = cv2.bitwise_and(white_img, white_img, mask=mask)
-    result = cv2.add(img_foreground, img_background)
-    return result
-
-
-def replace_dominant_color_with_white11(img, n_clusters=3):
-    # 调整图像大小以加快处理速度
-    small_img = cv2.resize(img, (0, 0), fx=0.1, fy=0.1, interpolation=cv2.INTER_AREA)
-
-    # 将图像从 BGR 转为 RGB
-    small_img_rgb = cv2.cvtColor(small_img, cv2.COLOR_BGR2RGB)
-
-    # 将图像数据重塑为二维数组
-    pixel_data = small_img_rgb.reshape(-1, 3)
-
-    # 使用 K-means 算法对像素数据进行聚类
-    kmeans = KMeans(n_clusters=n_clusters)
-    kmeans.fit(pixel_data)
-    cluster_centers = kmeans.cluster_centers_
-
-    # 获取最常见的颜色
-    unique, counts = np.unique(kmeans.labels_, return_counts=True)
-    dominant_color = cluster_centers[np.argmax(counts)].astype(int)
-
-    # 为最常见的颜色创建一个遮罩
-    mask = cv2.inRange(img, dominant_color - 30, dominant_color + 30)
-    mask_inv = cv2.bitwise_not(mask)
-
-    # 创建一个白色背景
-    white_img = np.full(img.shape, 255, dtype=np.uint8)
-
-    # 使用遮罩将最常见的颜色替换为白色
-    img_foreground = cv2.bitwise_and(img, img, mask=mask_inv)
-    img_background = cv2.bitwise_and(white_img, white_img, mask=mask)
-
-    result = cv2.add(img_foreground, img_background)
-    return result
-
-
-def replace_non_white_with_white(img, threshold=230):
-    lower_bound = np.array([threshold, threshold, threshold])
-    upper_bound = np.array([255, 255, 255])
-
-    white_mask = cv2.inRange(img, lower_bound, upper_bound)
-    white_mask_inv = cv2.bitwise_not(white_mask)
-
-    white_img = np.full(img.shape, 255, dtype=np.uint8)
-    img_foreground = cv2.bitwise_and(img, img, mask=white_mask_inv)
-    img_background = cv2.bitwise_and(white_img, white_img, mask=white_mask)
-
-    result = cv2.add(img_foreground, img_background)
-    return result
 
 
 def extract_foreground(img, iterations=5):
@@ -166,19 +52,6 @@ def crop_face(input_dir, output_dir, img_size=300):
                 start_y, end_y = max(0, center_y - half_size), min(img.shape[0], center_y + half_size)
 
                 cropped_face = img[start_y:end_y, start_x:end_x]
-
-
-
-                # 提取前景并与白色背景合并
-                # mask_binary = extract_foreground(cropped_face, iterations=5)
-                # cropped_face = replace_background_with_white(cropped_face, mask_binary)
-
-                # 将非白色背景替换为白色背景
-                # cropped_face = replace_non_white_with_white(cropped_face, threshold=240)
-
-                # 将最常见的背景颜色替换为白色
-                # cropped_face = replace_dominant_color_with_white(cropped_face, n_clusters=5)
-                cropped_face = replace_dominant_color_with_white(cropped_face, n_clusters=10, percentage_threshold=0.44)
 
                 # 计算等比例缩放因子
                 scale_factor = img_size / max(cropped_face.shape[0], cropped_face.shape[1])
