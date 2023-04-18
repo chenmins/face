@@ -5,7 +5,55 @@ from mtcnn.mtcnn import MTCNN
 from sklearn.cluster import KMeans
 
 
-def replace_dominant_color_with_white(img, n_clusters=5):
+def replace_dominant_color_with_white(img, n_clusters=3, percentage_threshold=0.5):
+    # 调整图像大小以加快处理速度
+    small_img = cv2.resize(img, (0, 0), fx=0.1, fy=0.1, interpolation=cv2.INTER_AREA)
+
+    # 将图像从 BGR 转为 RGB
+    small_img_rgb = cv2.cvtColor(small_img, cv2.COLOR_BGR2RGB)
+
+    # 将图像数据重塑为二维数组
+    pixel_data = small_img_rgb.reshape(-1, 3)
+
+    # 使用 K-means 算法对像素数据进行聚类
+    kmeans = KMeans(n_clusters=n_clusters)
+    kmeans.fit(pixel_data)
+    cluster_centers = kmeans.cluster_centers_
+
+    # 获取每个聚类的像素计数
+    unique, counts = np.unique(kmeans.labels_, return_counts=True)
+
+    # 计算每个聚类的像素占比
+    percentages = counts / sum(counts)
+
+    # 创建一个空白遮罩
+    mask = np.zeros(img.shape[:2], dtype=np.uint8)
+
+    # 遍历每个聚类，检查其占比是否大于阈值
+    for i, percentage in enumerate(percentages):
+        if percentage > percentage_threshold:
+            dominant_color = cluster_centers[i].astype(int)
+
+            # 为大于阈值的颜色创建遮罩
+            color_mask = cv2.inRange(img, dominant_color - 50, dominant_color + 50)
+            mask = cv2.bitwise_or(mask, color_mask)
+
+    mask_inv = cv2.bitwise_not(mask)
+
+    # 创建一个白色背景
+    white_img = np.full(img.shape, 255, dtype=np.uint8)
+
+    # 使用遮罩将大于阈值的颜色替换为白色
+    img_foreground = cv2.bitwise_and(img, img, mask=mask_inv)
+    img_background = cv2.bitwise_and(white_img, white_img, mask=mask)
+
+    result = cv2.add(img_foreground, img_background)
+    return result
+
+
+
+
+def replace_dominant_color_with_white66(img, n_clusters=5):
     small_img = cv2.resize(img, (0, 0), fx=0.1, fy=0.1, interpolation=cv2.INTER_AREA)
     small_img_rgb = cv2.cvtColor(small_img, cv2.COLOR_BGR2RGB)
     pixel_data = small_img_rgb.reshape(-1, 3)
@@ -129,7 +177,8 @@ def crop_face(input_dir, output_dir, img_size=300):
                 # cropped_face = replace_non_white_with_white(cropped_face, threshold=240)
 
                 # 将最常见的背景颜色替换为白色
-                cropped_face = replace_dominant_color_with_white(cropped_face, n_clusters=5)
+                # cropped_face = replace_dominant_color_with_white(cropped_face, n_clusters=5)
+                cropped_face = replace_dominant_color_with_white(cropped_face, n_clusters=10, percentage_threshold=0.44)
 
                 # 计算等比例缩放因子
                 scale_factor = img_size / max(cropped_face.shape[0], cropped_face.shape[1])
