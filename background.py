@@ -20,20 +20,34 @@ preprocess = transforms.Compose([
 
 
 def remove_background(image):
-    input_tensor = preprocess(image).unsqueeze(0).to(device)
+    original_size = image.size
+
+    # 将图像缩放到模型输入尺寸
+    resized_image = image.resize((224, 224), Image.ANTIALIAS)
+
+    input_tensor = preprocess(resized_image).unsqueeze(0).to(device)
     with torch.no_grad():
         output = model(input_tensor)["out"]
     output_predictions = output.argmax(1).cpu().numpy()
-    mask = (output_predictions == 0)  # 假设背景类为0
+
+    mask = (output_predictions != 0)  # 将不等于背景类的像素保留为主体
     mask = np.repeat(mask[:, :, :, np.newaxis], 3, axis=3)
 
-    image_np = np.array(image)
-    image_np = cv2.resize(image_np, (224, 224))
+    image_np = np.array(resized_image)
+    image_no_bg = image_np * mask[0]  # 选择第一个元素，以获取正确的形状
 
-    image_no_bg = image_np * mask
-    image_no_bg = Image.fromarray(image_no_bg.astype(np.uint8))
+    # 将背景设置为白色
+    background = np.ones_like(image_no_bg) * 255
+    background[np.where(mask[0] == 1)] = 0
 
-    return image_no_bg
+    image_white_bg = image_no_bg + background
+    image_white_bg = Image.fromarray(image_white_bg.astype(np.uint8))
+
+    # 使用原始掩码将图像恢复到原始尺寸
+    mask_original_size = np.array(Image.fromarray(mask[0].astype(np.uint8)).resize(original_size, Image.ANTIALIAS))
+    image_white_bg_original_size = Image.fromarray(np.array(image) * mask_original_size + np.array(Image.new('RGB', original_size, (255, 255, 255))) * (1 - mask_original_size))
+
+    return image_white_bg_original_size
 
 
 if __name__ == "__main__":
