@@ -1,5 +1,6 @@
 
 
+
 import os
 import cv2
 import numpy as np
@@ -87,4 +88,6 @@ def crop_face(input_dir, output_dir, img_size=300):
 if __name__ == "__main__":
     input_dir = "input/"  # 输入文件夹路径，包含原始头像图片
     output_dir = "output/"  # 输出文件夹路径，用于保存裁剪后的头像
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
     crop_face(input_dir, output_dir)
