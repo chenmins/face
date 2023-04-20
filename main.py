@@ -1,7 +1,7 @@
 
 
 
-import os
+背景白色，跳过处理import os
 import cv2
 import numpy as np
 from mtcnn.mtcnn import MTCNN
