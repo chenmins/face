@@ -10,6 +10,8 @@ from mtcnn.mtcnn import MTCNN
 from torchvision import transforms
 from torchvision.models.segmentation import deeplabv3_resnet50
 from werkzeug.utils import secure_filename
+import functools
+import hashlib
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads/'
@@ -25,6 +27,7 @@ preprocess = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
+
 
 # ... 保留 remove_background, is_white_background, extract_foreground, replace_background_with_white 和 crop_face 的实现 ...
 
@@ -61,7 +64,7 @@ def remove_background(image, kernel_size=5, morph_type=cv2.MORPH_CLOSE):
     mask_original_size = np.array(Image.fromarray(mask_smooth).resize(original_size, Image.ANTIALIAS))
     image_white_bg_original_size = Image.fromarray(
         np.array(image) * mask_original_size + np.array(Image.new('RGB', original_size, (255, 255, 255))) * (
-                    1 - mask_original_size))
+                1 - mask_original_size))
 
     return image_white_bg_original_size
 
@@ -155,6 +158,33 @@ def crop_face(input_dir, output_dir, expand_factor=1.8, img_size=300):
         cv2.imwrite(output_dir, masked_face)
 
 
+cache = {}
+
+
+def process_image(input_path, output_path, expand_factor, img_size):
+    if os.path.exists(output_path):
+        return send_file(output_path, mimetype='image/png')
+    else:
+        image = Image.open(input_path).convert("RGB")
+        image_no_bg = remove_background(image, kernel_size=3, morph_type=cv2.MORPH_OPEN)
+        image_no_bg.save(input_path)
+        crop_face(input_path, output_path, expand_factor, img_size)
+        cache[input_path] = output_path
+        return send_file(output_path, mimetype='image/png')
+
+
+def handle_request(input_path, expand_factor, img_size):
+    image = Image.open(input_path).convert("RGB")
+    image_hash = hashlib.md5(image.tobytes()).hexdigest()
+    output_filename = f"{image_hash}.png"
+    output_path = os.path.join(app.config['UPLOAD_FOLDER'], "output", output_filename)
+
+    if input_path in cache:
+        return send_file(cache[input_path], mimetype='image/png')
+    else:
+        return process_image(input_path, output_path, expand_factor, img_size)
+
+
 @app.route('/api/ai/crop_face_file', methods=['POST'])
 def crop_face_file():
     file = request.files.get('file')
@@ -165,16 +195,7 @@ def crop_face_file():
         filename = secure_filename(file.filename)
         input_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(input_path)
-
-        image = Image.open(input_path).convert("RGB")
-        image_no_bg = remove_background(image, kernel_size=3, morph_type=cv2.MORPH_OPEN)
-        image_no_bg.save(input_path)
-
-        output_path = os.path.join(app.config['UPLOAD_FOLDER'], "output", filename)
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        crop_face(input_path, output_path, expand_factor, img_size)
-
-        return send_file(output_path, mimetype='image/png')
+        return handle_request(input_path, expand_factor, img_size)
     else:
         return "No file provided", 400
 
@@ -188,20 +209,14 @@ def crop_face_url():
     if url:
         input_path = os.path.join(app.config['UPLOAD_FOLDER'], os.path.basename(url))
         urlretrieve(url, input_path)
-
-        image = Image.open(input_path).convert("RGB")
-        image_no_bg = remove_background(image, kernel_size=3, morph_type=cv2.MORPH_OPEN)
-        image_no_bg.save(input_path)
-
-        output_path = os.path.join(app.config['UPLOAD_FOLDER'], "output", os.path.basename(url))
-
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        crop_face(input_path, output_path, expand_factor, img_size)
-
-        return send_file(output_path, mimetype='image/png')
+        return handle_request(input_path, expand_factor, img_size)
     else:
         return "No URL provided", 400
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(
+        host='0.0.0.0',
+        port=8080,
+        debug=True
+    )
