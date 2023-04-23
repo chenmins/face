@@ -7,6 +7,8 @@ WORKDIR /app
 # 将当前目录的内容复制到工作目录
 COPY . /app
 
+RUN mkdir -vp /app/uploads/output
+
 # 安装需要的依赖包
 RUN pip install --trusted-host pypi.python.org -r requirements.txt
 
