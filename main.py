@@ -98,24 +98,51 @@ def replace_background_with_white(img, mask_binary):
     white_bg = np.full(img.shape, 255, dtype=np.uint8)
     img_foreground = cv2.bitwise_and(img, img, mask=mask_binary)
     img_background = cv2.bitwise_and(white_bg, white_bg, mask=cv2.bitwise_not(mask_binary))
-
     result = cv2.add(img_foreground, img_background)
     return result
 
 
-def crop_face(input_dir, output_dir, expand_factor=1.8, img_size=300):
-    # if not os.path.exists(output_dir):
-    #     os.makedirs(output_dir)
-
+def face(input_dir, output_dir, img_size=300):
     detector = MTCNN()
-    # for root, _, files in os.walk(input_dir):
-    #     for file in files:
-    # input_file = os.path.join(root, file)
+    for root, _, files in os.walk(input_dir):
+        for file in files:
+            input_file = os.path.join(root, file)
+            img = cv2.imread(input_file)
+            faces = detector.detect_faces(img)
+            print(len(faces))
+
+            if len(faces) > 0:
+                face = max(faces, key=lambda face: face['box'][2] * face['box'][3])  # 选择最大的人脸
+                x, y, width, height = face['box']
+                center_x, center_y = x + width // 2, y + height // 2
+
+                expand_factor = 1.8  # 根据需要调整扩展因子，这里取1.2
+                half_size = int(max(width, height) * expand_factor) // 2
+
+                start_x, end_x = max(0, center_x - half_size), min(img.shape[1], center_x + half_size)
+                start_y, end_y = max(0, center_y - half_size), min(img.shape[0], center_y + half_size)
+
+                cropped_face = img[start_y:end_y, start_x:end_x]
+
+                # 计算等比例缩放因子
+                scale_factor = img_size / max(cropped_face.shape[0], cropped_face.shape[1])
+                new_width = int(cropped_face.shape[1] * scale_factor)
+                new_height = int(cropped_face.shape[0] * scale_factor)
+
+                # 使用等比例缩放调整头像大小
+                resized_face = cv2.resize(cropped_face, (new_width, new_height), interpolation=cv2.INTER_AREA)
+
+                output_file = os.path.join(output_dir, os.path.splitext(file)[0] + '.jpg')
+                cv2.imwrite(output_file, resized_face)
+
+
+def crop_face(input_dir, output_dir, expand_factor=1.8, img_size=300):
+    detector = MTCNN()
+
     file = input_dir
     input_file = input_dir
     img = cv2.imread(input_file)
     faces = detector.detect_faces(img)
-    print(len(faces))
 
     if len(faces) > 0:
         face = max(faces, key=lambda face: face['box'][2] * face['box'][3])  # 选择最大的人脸
@@ -161,19 +188,22 @@ def crop_face(input_dir, output_dir, expand_factor=1.8, img_size=300):
 cache = {}
 
 
-def process_image(input_path, output_path, expand_factor, img_size):
+def process_image(input_path, output_path, expand_factor, img_size, need_crop):
     if os.path.exists(output_path):
         return send_file(output_path, mimetype='image/png')
     else:
         image = Image.open(input_path).convert("RGB")
         image_no_bg = remove_background(image, kernel_size=3, morph_type=cv2.MORPH_OPEN)
         image_no_bg.save(input_path)
-        crop_face(input_path, output_path, expand_factor, img_size)
+        if need_crop:
+            crop_face(input_path, output_path, expand_factor, img_size)
+        else:
+            face(input_path, output_path, expand_factor, img_size)
         cache[input_path] = output_path
         return send_file(output_path, mimetype='image/png')
 
 
-def handle_request(input_path, expand_factor, img_size):
+def handle_request(input_path, expand_factor, img_size, need_crop=True):
     image = Image.open(input_path).convert("RGB")
     image_hash = hashlib.md5(image.tobytes()).hexdigest()
     output_filename = f"{image_hash}.png"
@@ -182,7 +212,22 @@ def handle_request(input_path, expand_factor, img_size):
     if input_path in cache:
         return send_file(cache[input_path], mimetype='image/png')
     else:
-        return process_image(input_path, output_path, expand_factor, img_size)
+        return process_image(input_path, output_path, expand_factor, img_size, need_crop)
+
+
+@app.route('/api/ai/face_file', methods=['POST'])
+def face_file():
+    file = request.files.get('file')
+    expand_factor = float(request.form.get('expand_factor', 1.8))
+    img_size = int(request.form.get('img_size', 600))
+
+    if file:
+        filename = secure_filename(file.filename)
+        input_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(input_path)
+        return handle_request(input_path, expand_factor, img_size, False)
+    else:
+        return "No file provided", 400
 
 
 @app.route('/api/ai/crop_face_file', methods=['POST'])
