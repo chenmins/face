@@ -1,0 +1,5 @@
+# 使用上一次d基础镜像
+FROM chenmins/face:tf
+
+# 将当前目录的内容复制到工作目录
+COPY main.py /app/
