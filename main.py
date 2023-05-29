@@ -12,6 +12,8 @@ from torchvision.models.segmentation import deeplabv3_resnet50
 from werkzeug.utils import secure_filename
 import functools
 import hashlib
+import uuid
+
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads/'
@@ -102,38 +104,37 @@ def replace_background_with_white(img, mask_binary):
     return result
 
 
-def face(input_dir, output_dir, img_size=300):
+def face(input_dir, output_dir, expand_factor=1.8, img_size=300):
     detector = MTCNN()
-    for root, _, files in os.walk(input_dir):
-        for file in files:
-            input_file = os.path.join(root, file)
-            img = cv2.imread(input_file)
-            faces = detector.detect_faces(img)
-            print(len(faces))
 
-            if len(faces) > 0:
-                face = max(faces, key=lambda face: face['box'][2] * face['box'][3])  # 选择最大的人脸
-                x, y, width, height = face['box']
-                center_x, center_y = x + width // 2, y + height // 2
+    file = input_dir
+    input_file = input_dir
+    img = cv2.imread(input_file)
+    faces = detector.detect_faces(img)
 
-                expand_factor = 1.8  # 根据需要调整扩展因子，这里取1.2
-                half_size = int(max(width, height) * expand_factor) // 2
+    if len(faces) > 0:
+        face = max(faces, key=lambda face: face['box'][2] * face['box'][3])  # 选择最大的人脸
+        x, y, width, height = face['box']
+        center_x, center_y = x + width // 2, y + height // 2
 
-                start_x, end_x = max(0, center_x - half_size), min(img.shape[1], center_x + half_size)
-                start_y, end_y = max(0, center_y - half_size), min(img.shape[0], center_y + half_size)
+        expand_factor = 1.8  # 根据需要调整扩展因子，这里取1.2
+        half_size = int(max(width, height) * expand_factor) // 2
 
-                cropped_face = img[start_y:end_y, start_x:end_x]
+        start_x, end_x = max(0, center_x - half_size), min(img.shape[1], center_x + half_size)
+        start_y, end_y = max(0, center_y - half_size), min(img.shape[0], center_y + half_size)
 
-                # 计算等比例缩放因子
-                scale_factor = img_size / max(cropped_face.shape[0], cropped_face.shape[1])
-                new_width = int(cropped_face.shape[1] * scale_factor)
-                new_height = int(cropped_face.shape[0] * scale_factor)
+        cropped_face = img[start_y:end_y, start_x:end_x]
 
-                # 使用等比例缩放调整头像大小
-                resized_face = cv2.resize(cropped_face, (new_width, new_height), interpolation=cv2.INTER_AREA)
+        # 计算等比例缩放因子
+        scale_factor = img_size / max(cropped_face.shape[0], cropped_face.shape[1])
+        new_width = int(cropped_face.shape[1] * scale_factor)
+        new_height = int(cropped_face.shape[0] * scale_factor)
 
-                output_file = os.path.join(output_dir, os.path.splitext(file)[0] + '.jpg')
-                cv2.imwrite(output_file, resized_face)
+        # 使用等比例缩放调整头像大小
+        resized_face = cv2.resize(cropped_face, (new_width, new_height), interpolation=cv2.INTER_AREA)
+
+        # output_file = os.path.join(output_dir, os.path.splitext(file)[0] + '.jpg')
+        cv2.imwrite(output_dir, resized_face)
 
 
 def crop_face(input_dir, output_dir, expand_factor=1.8, img_size=300):
@@ -192,10 +193,10 @@ def process_image(input_path, output_path, expand_factor, img_size, need_crop):
     if os.path.exists(output_path):
         return send_file(output_path, mimetype='image/png')
     else:
-        image = Image.open(input_path).convert("RGB")
-        image_no_bg = remove_background(image, kernel_size=3, morph_type=cv2.MORPH_OPEN)
-        image_no_bg.save(input_path)
         if need_crop:
+            image = Image.open(input_path).convert("RGB")
+            image_no_bg = remove_background(image, kernel_size=3, morph_type=cv2.MORPH_OPEN)
+            image_no_bg.save(input_path)
             crop_face(input_path, output_path, expand_factor, img_size)
         else:
             face(input_path, output_path, expand_factor, img_size)
@@ -222,7 +223,7 @@ def face_file():
     img_size = int(request.form.get('img_size', 600))
 
     if file:
-        filename = secure_filename(file.filename)
+        filename = str(uuid.uuid4()) + '.png'  # 使用 UUID 作为文件名
         input_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(input_path)
         return handle_request(input_path, expand_factor, img_size, False)
@@ -237,7 +238,7 @@ def crop_face_file():
     img_size = int(request.form.get('img_size', 300))
 
     if file:
-        filename = secure_filename(file.filename)
+        filename = str(uuid.uuid4()) + '.png'  # 使用 UUID 作为文件名
         input_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(input_path)
         return handle_request(input_path, expand_factor, img_size)
@@ -262,6 +263,6 @@ def crop_face_url():
 if __name__ == '__main__':
     app.run(
         host='0.0.0.0',
-        port=8080,
+        port=8888,
         debug=True
     )

@@ -1,5 +1,5 @@
 # 使用官方 Python 基础镜像
-FROM python:3.8-slim
+FROM tensorflow/tensorflow:2.6.0
 
 # 安装需要的依赖包和库
 RUN apt-get update && \
@@ -12,19 +12,12 @@ RUN apt-get update && \
 # 设置工作目录
 WORKDIR /app
 # 将当前目录的内容复制到工作目录
-COPY . /app
+COPY main.py /app/
+COPY requirements.txt /app/
+RUN mkdir -vp /app/uploads/output && mkdir -p /root/.cache/torch/hub/checkpoints
+ADD deeplabv3_resnet50_coco-cd0a2569.pth /root/.cache/torch/hub/checkpoints/deeplabv3_resnet50_coco-cd0a2569.pth
 # 安装需要的依赖包
-RUN pip install --trusted-host pypi.python.org -r requirements.txt
-
-RUN mkdir -vp /app/uploads/output
-
-# Install wget and download model file
-RUN apt-get update \
-    && apt-get install -y wget \
-    && mkdir -p /root/.cache/torch/hub/checkpoints \
-    && wget -O /root/.cache/torch/hub/checkpoints/deeplabv3_resnet50_coco-cd0a2569.pth "https://download.pytorch.org/models/deeplabv3_resnet50_coco-cd0a2569.pth" \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple &&  /usr/bin/python3 -m pip install --upgrade pip &&  pip install --trusted-host pypi.tuna.tsinghua.edu.cn -r requirements.txt
 
 # 暴露端口供应用程序使用
 EXPOSE 8080
