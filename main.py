@@ -13,7 +13,8 @@ from werkzeug.utils import secure_filename
 import functools
 import hashlib
 import uuid
-
+import time
+import logging
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads/'
@@ -216,8 +217,12 @@ def handle_request(input_path, expand_factor, img_size, need_crop=True):
         return process_image(input_path, output_path, expand_factor, img_size, need_crop)
 
 
+import time
+
+
 @app.route('/api/ai/face_file', methods=['POST'])
 def face_file():
+    start_time = time.time()  # 记录开始时间
     file = request.files.get('file')
     expand_factor = float(request.form.get('expand_factor', 1.8))
     img_size = int(request.form.get('img_size', 600))
@@ -226,13 +231,22 @@ def face_file():
         filename = str(uuid.uuid4()) + '.png'  # 使用 UUID 作为文件名
         input_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(input_path)
-        return handle_request(input_path, expand_factor, img_size, False)
+        processing_start_time = time.time()  # 记录图片保存完成后开始处理的时间
+        result = handle_request(input_path, expand_factor, img_size, False)
+        processing_end_time = time.time()  # 记录图片处理完成的时间
+        total_processing_time = processing_end_time - processing_start_time  # 计算图片处理时间
+        app.logger.info(f"Image processing time for {input_path}: {total_processing_time} seconds")
+        end_time = time.time()  # 记录结束时间
+        total_time = end_time - start_time  # 计算总耗时（包括图片接收时间）
+        app.logger.info(f"Total request time for {input_path}: {total_time} seconds")
+        return result
     else:
         return "No file provided", 400
 
 
 @app.route('/api/ai/crop_face_file', methods=['POST'])
 def crop_face_file():
+    start_time = time.time()  # 记录开始时间
     file = request.files.get('file')
     expand_factor = float(request.form.get('expand_factor', 1.8))
     img_size = int(request.form.get('img_size', 300))
@@ -241,13 +255,22 @@ def crop_face_file():
         filename = str(uuid.uuid4()) + '.png'  # 使用 UUID 作为文件名
         input_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(input_path)
-        return handle_request(input_path, expand_factor, img_size)
+        processing_start_time = time.time()  # 记录图片保存完成后开始处理的时间
+        result = handle_request(input_path, expand_factor, img_size)
+        processing_end_time = time.time()  # 记录图片处理完成的时间
+        total_processing_time = processing_end_time - processing_start_time  # 计算图片处理时间
+        app.logger.info(f"Image processing time for {input_path}: {total_processing_time} seconds")
+        end_time = time.time()  # 记录结束时间
+        total_time = end_time - start_time  # 计算总耗时（包括图片接收时间）
+        app.logger.info(f"Total request time for {input_path}: {total_time} seconds")
+        return result
     else:
         return "No file provided", 400
 
 
 @app.route('/api/ai/crop_face_url', methods=['GET'])
 def crop_face_url():
+    start_time = time.time()  # 记录开始时间
     url = request.args.get('url')
     expand_factor = float(request.args.get('expand_factor', 1.8))
     img_size = int(request.args.get('img_size', 300))
@@ -255,12 +278,28 @@ def crop_face_url():
     if url:
         input_path = os.path.join(app.config['UPLOAD_FOLDER'], os.path.basename(url))
         urlretrieve(url, input_path)
-        return handle_request(input_path, expand_factor, img_size)
+        processing_start_time = time.time()  # 记录图片保存完成后开始处理的时间
+        result = handle_request(input_path, expand_factor, img_size)
+        processing_end_time = time.time()  # 记录图片处理完成的时间
+        total_processing_time = processing_end_time - processing_start_time  # 计算图片处理时间
+        app.logger.info(f"Image processing time for {input_path}: {total_processing_time} seconds")
+        end_time = time.time()  # 记录结束时间
+        total_time = end_time - start_time  # 计算总耗时（包括图片接收时间）
+        app.logger.info(f"Total request time for {input_path}: {total_time} seconds")
+        return result
     else:
         return "No URL provided", 400
 
 
 if __name__ == '__main__':
+    # 设置日志级别为 DEBUG
+    app.logger.setLevel(logging.INFO)
+
+    # 添加控制台处理程序
+    # console_handler = logging.StreamHandler()
+    # console_handler.setLevel(logging.INFO)  # 设置控制台处理程序的日志级别为 DEBUG
+    # app.logger.addHandler(console_handler)
+
     app.run(
         host='0.0.0.0',
         port=8888,
