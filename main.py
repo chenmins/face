@@ -15,6 +15,8 @@ import hashlib
 import uuid
 import time
 import logging
+import shutil
+
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads/'
@@ -111,6 +113,7 @@ def face(input_dir, output_dir, expand_factor=1.8, img_size=300):
     file = input_dir
     input_file = input_dir
     img = cv2.imread(input_file)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     faces = detector.detect_faces(img)
 
     if len(faces) > 0:
@@ -135,7 +138,10 @@ def face(input_dir, output_dir, expand_factor=1.8, img_size=300):
         resized_face = cv2.resize(cropped_face, (new_width, new_height), interpolation=cv2.INTER_AREA)
 
         # output_file = os.path.join(output_dir, os.path.splitext(file)[0] + '.jpg')
-        cv2.imwrite(output_dir, resized_face)
+        #cv2.imwrite(output_dir, resized_face)
+        resized_face_bgr = cv2.cvtColor(resized_face, cv2.COLOR_RGB2BGR)
+        cv2.imwrite(output_dir, resized_face_bgr)
+
 
 
 def crop_face(input_dir, output_dir, expand_factor=1.8, img_size=300):
@@ -144,6 +150,7 @@ def crop_face(input_dir, output_dir, expand_factor=1.8, img_size=300):
     file = input_dir
     input_file = input_dir
     img = cv2.imread(input_file)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     faces = detector.detect_faces(img)
 
     if len(faces) > 0:
@@ -184,7 +191,8 @@ def crop_face(input_dir, output_dir, expand_factor=1.8, img_size=300):
 
         # 合并原图和遮罩
         masked_face = cv2.bitwise_and(padded_face_rgba, mask)
-        cv2.imwrite(output_dir, masked_face)
+        resized_face_bgr = cv2.cvtColor(masked_face, cv2.COLOR_RGB2BGR)
+        cv2.imwrite(output_dir, resized_face_bgr) 
 
 
 cache = {}
@@ -211,6 +219,16 @@ def handle_request(input_path, expand_factor, img_size, need_crop=True):
     output_filename = f"{image_hash}.png"
     output_path = os.path.join(app.config['UPLOAD_FOLDER'], "output", output_filename)
 
+    detector = MTCNN()
+    img = cv2.imread(input_path)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    faces = detector.detect_faces(img)
+
+    if len(faces) == 0:
+        error_path = os.path.join(app.config['UPLOAD_FOLDER'], "error", output_filename)
+        shutil.copy(input_path, error_path)
+        return {"status": 500, "msg": "未检测到人脸信息"}
+
     if input_path in cache:
         return send_file(cache[input_path], mimetype='image/png')
     else:
@@ -233,6 +251,14 @@ def face_file():
         file.save(input_path)
         processing_start_time = time.time()  # 记录图片保存完成后开始处理的时间
         result = handle_request(input_path, expand_factor, img_size, False)
+        
+        
+        if isinstance(result, dict) and "status" in result:
+            return result, 200  # 你可以选择更改为其他HTTP状态，但你提到的是200，所以我这里保持200
+        else:
+            return result
+        
+        
         processing_end_time = time.time()  # 记录图片处理完成的时间
         total_processing_time = processing_end_time - processing_start_time  # 计算图片处理时间
         app.logger.info(f"Image processing time for {input_path}: {total_processing_time} seconds")
@@ -257,6 +283,12 @@ def crop_face_file():
         file.save(input_path)
         processing_start_time = time.time()  # 记录图片保存完成后开始处理的时间
         result = handle_request(input_path, expand_factor, img_size)
+        
+        if isinstance(result, dict) and "status" in result:
+            return result, 200  # 你可以选择更改为其他HTTP状态，但你提到的是200，所以我这里保持200
+        else:
+            return result
+        
         processing_end_time = time.time()  # 记录图片处理完成的时间
         total_processing_time = processing_end_time - processing_start_time  # 计算图片处理时间
         app.logger.info(f"Image processing time for {input_path}: {total_processing_time} seconds")
@@ -268,28 +300,7 @@ def crop_face_file():
         return "No file provided", 400
 
 
-@app.route('/api/ai/crop_face_url', methods=['GET'])
-def crop_face_url():
-    start_time = time.time()  # 记录开始时间
-    url = request.args.get('url')
-    expand_factor = float(request.args.get('expand_factor', 1.8))
-    img_size = int(request.args.get('img_size', 300))
-
-    if url:
-        input_path = os.path.join(app.config['UPLOAD_FOLDER'], os.path.basename(url))
-        urlretrieve(url, input_path)
-        processing_start_time = time.time()  # 记录图片保存完成后开始处理的时间
-        result = handle_request(input_path, expand_factor, img_size)
-        processing_end_time = time.time()  # 记录图片处理完成的时间
-        total_processing_time = processing_end_time - processing_start_time  # 计算图片处理时间
-        app.logger.info(f"Image processing time for {input_path}: {total_processing_time} seconds")
-        end_time = time.time()  # 记录结束时间
-        total_time = end_time - start_time  # 计算总耗时（包括图片接收时间）
-        app.logger.info(f"Total request time for {input_path}: {total_time} seconds")
-        return result
-    else:
-        return "No URL provided", 400
-
+ 
 
 if __name__ == '__main__':
     # 设置日志级别为 DEBUG
@@ -305,3 +316,4 @@ if __name__ == '__main__':
         port=8888,
         debug=True
     )
+
