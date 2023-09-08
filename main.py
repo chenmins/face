@@ -107,21 +107,15 @@ def replace_background_with_white(img, mask_binary):
     return result
 
 
-def face(input_dir, output_dir, expand_factor=1.8, img_size=300):
-    detector = MTCNN()
+def face(faces, input_dir, output_dir, expand_factor=1.8, img_size=300):
 
-    file = input_dir
-    input_file = input_dir
-    img = cv2.imread(input_file)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    faces = detector.detect_faces(img)
-
+    img = cv2.imread(input_dir)
     if len(faces) > 0:
         face = max(faces, key=lambda face: face['box'][2] * face['box'][3])  # 选择最大的人脸
         x, y, width, height = face['box']
         center_x, center_y = x + width // 2, y + height // 2
 
-        expand_factor = 1.8  # 根据需要调整扩展因子，这里取1.2
+        # expand_factor = 1.8  # 根据需要调整扩展因子，这里取1.2
         half_size = int(max(width, height) * expand_factor) // 2
 
         start_x, end_x = max(0, center_x - half_size), min(img.shape[1], center_x + half_size)
@@ -138,20 +132,16 @@ def face(input_dir, output_dir, expand_factor=1.8, img_size=300):
         resized_face = cv2.resize(cropped_face, (new_width, new_height), interpolation=cv2.INTER_AREA)
 
         # output_file = os.path.join(output_dir, os.path.splitext(file)[0] + '.jpg')
-        #cv2.imwrite(output_dir, resized_face)
-        resized_face_bgr = cv2.cvtColor(resized_face, cv2.COLOR_RGB2BGR)
-        cv2.imwrite(output_dir, resized_face_bgr)
+        cv2.imwrite(output_dir, resized_face)
+        # resized_face_bgr = cv2.cvtColor(resized_face, cv2.COLOR_RGB2BGR)
+        # cv2.imwrite(output_dir, resized_face_bgr)
 
 
 
-def crop_face(input_dir, output_dir, expand_factor=1.8, img_size=300):
-    detector = MTCNN()
+def crop_face(faces, input_dir, output_dir, expand_factor=1.8, img_size=300):
 
-    file = input_dir
-    input_file = input_dir
-    img = cv2.imread(input_file)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    faces = detector.detect_faces(img)
+    app.logger.info(f"crop_face for {input_dir}: {output_dir} 9999 ")
+    img = cv2.imread(input_dir)
 
     if len(faces) > 0:
         face = max(faces, key=lambda face: face['box'][2] * face['box'][3])  # 选择最大的人脸
@@ -191,14 +181,16 @@ def crop_face(input_dir, output_dir, expand_factor=1.8, img_size=300):
 
         # 合并原图和遮罩
         masked_face = cv2.bitwise_and(padded_face_rgba, mask)
-        resized_face_bgr = cv2.cvtColor(masked_face, cv2.COLOR_RGB2BGR)
-        cv2.imwrite(output_dir, resized_face_bgr) 
+        cv2.imwrite(output_dir, masked_face)
+        # resized_face_bgr = cv2.cvtColor(masked_face, cv2.COLOR_RGB2BGR)
+        # cv2.imwrite(output_dir, resized_face_bgr)
 
 
 cache = {}
 
 
-def process_image(input_path, output_path, expand_factor, img_size, need_crop):
+def process_image(faces, input_path, output_path, expand_factor, img_size, need_crop):
+    app.logger.info(f"process_image for {input_path}: {output_path}  ")
     if os.path.exists(output_path):
         return send_file(output_path, mimetype='image/png')
     else:
@@ -206,33 +198,55 @@ def process_image(input_path, output_path, expand_factor, img_size, need_crop):
             image = Image.open(input_path).convert("RGB")
             image_no_bg = remove_background(image, kernel_size=3, morph_type=cv2.MORPH_OPEN)
             image_no_bg.save(input_path)
-            crop_face(input_path, output_path, expand_factor, img_size)
+            crop_face(faces, input_path, output_path, expand_factor, img_size)
         else:
-            face(input_path, output_path, expand_factor, img_size)
+            face(faces, input_path, output_path, expand_factor, img_size)
         cache[input_path] = output_path
         return send_file(output_path, mimetype='image/png')
 
 
-def handle_request(input_path, expand_factor, img_size, need_crop=True):
+def handle_request(faces, input_path, expand_factor, img_size, need_crop=True):
     image = Image.open(input_path).convert("RGB")
     image_hash = hashlib.md5(image.tobytes()).hexdigest()
     output_filename = f"{image_hash}.png"
     output_path = os.path.join(app.config['UPLOAD_FOLDER'], "output", output_filename)
 
-    detector = MTCNN()
-    img = cv2.imread(input_path)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    faces = detector.detect_faces(img)
-
-    if len(faces) == 0:
-        error_path = os.path.join(app.config['UPLOAD_FOLDER'], "error", output_filename)
-        shutil.copy(input_path, error_path)
-        return {"status": 500, "msg": "未检测到人脸信息"}
-
     if input_path in cache:
         return send_file(cache[input_path], mimetype='image/png')
     else:
-        return process_image(input_path, output_path, expand_factor, img_size, need_crop)
+        return process_image(faces, input_path, output_path, expand_factor, img_size, need_crop)
+
+
+def rotate_image(img, angle):
+    rows, cols, _ = img.shape
+    M = cv2.getRotationMatrix2D((cols / 2, rows / 2), angle, 1)
+    return cv2.warpAffine(img, M, (cols, rows))
+
+
+def getFaces(input_path):
+    detector = MTCNN()
+    img = cv2.imread(input_path)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+    all_faces = []
+
+    for angle in [0, 90, 180, 270]:
+        rotated_img = rotate_image(img, angle)
+        faces = detector.detect_faces(rotated_img)
+
+        # If faces are detected in the rotated image
+        if faces:
+            app.logger.info(f"getFaces for angle {angle} ~~~~~~~~~  ")
+            all_faces.extend(faces)
+
+            # Save the rotated image back to the input_path
+            rotated_bgr = cv2.cvtColor(rotated_img, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(input_path, rotated_bgr)
+
+            break  # We break here assuming that once a face is detected, we don't need to check other rotations.
+
+    app.logger.info(f"getFaces for {len(all_faces)} ~~~~~~~~~  ")
+    return all_faces
 
 
 import time
@@ -250,15 +264,15 @@ def face_file():
         input_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(input_path)
         processing_start_time = time.time()  # 记录图片保存完成后开始处理的时间
-        result = handle_request(input_path, expand_factor, img_size, False)
-        
-        
-        if isinstance(result, dict) and "status" in result:
-            return result, 200  # 你可以选择更改为其他HTTP状态，但你提到的是200，所以我这里保持200
-        else:
-            return result
-        
-        
+
+        faces = getFaces(input_path)
+        if len(faces) == 0:
+            error_path = os.path.join(app.config['UPLOAD_FOLDER'], "error", filename)
+            shutil.copy(input_path, error_path)
+            return {"status": 500, "msg": "未检测到人脸信息"}, 200
+
+        result = handle_request(faces, input_path, expand_factor, img_size, False)
+
         processing_end_time = time.time()  # 记录图片处理完成的时间
         total_processing_time = processing_end_time - processing_start_time  # 计算图片处理时间
         app.logger.info(f"Image processing time for {input_path}: {total_processing_time} seconds")
@@ -282,13 +296,15 @@ def crop_face_file():
         input_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(input_path)
         processing_start_time = time.time()  # 记录图片保存完成后开始处理的时间
-        result = handle_request(input_path, expand_factor, img_size)
-        
-        if isinstance(result, dict) and "status" in result:
-            return result, 200  # 你可以选择更改为其他HTTP状态，但你提到的是200，所以我这里保持200
-        else:
-            return result
-        
+
+        faces = getFaces(input_path)
+        if len(faces) == 0:
+            error_path = os.path.join(app.config['UPLOAD_FOLDER'], "error", filename)
+            shutil.copy(input_path, error_path)
+            return {"status": 500, "msg": "未检测到人脸信息"}, 200
+
+        result = handle_request(faces, input_path, expand_factor, img_size)
+
         processing_end_time = time.time()  # 记录图片处理完成的时间
         total_processing_time = processing_end_time - processing_start_time  # 计算图片处理时间
         app.logger.info(f"Image processing time for {input_path}: {total_processing_time} seconds")
@@ -300,7 +316,7 @@ def crop_face_file():
         return "No file provided", 400
 
 
- 
+
 
 if __name__ == '__main__':
     # 设置日志级别为 DEBUG
