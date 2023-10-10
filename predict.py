@@ -27,6 +27,13 @@ saved_data = torch.load("model_and_params.pth")
 vocab = saved_data['vocab']
 label_to_idx = saved_data['label_to_idx']
 
+
+# 打印出模型可以分类的所有标签
+print("Model can classify into following labels:")
+for label in label_to_idx.keys():
+    print(" -", label)
+
+
 hyper_params = saved_data['hyper_params']
 VOCAB_SIZE = hyper_params['VOCAB_SIZE']
 EMBED_DIM = hyper_params['EMBED_DIM']
